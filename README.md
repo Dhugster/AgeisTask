@@ -307,11 +307,19 @@ Use the provided `docker-compose.yml` for easy deployment.
 
 ## 🤝 Contributing
 
-Contributions welcome! Please read our contributing guidelines.
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
+- How to submit issues
+- How to submit pull requests
+- Coding standards
+- Development setup
+
+Also, please review our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
 
 ## 📄 License
 
-MIT License - see LICENSE file for details
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## 🐛 Troubleshooting
 
