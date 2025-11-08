@@ -162,7 +162,7 @@ async fn start_backend_server(app: tauri::AppHandle) -> Result<(), Box<dyn std::
         .spawn()?;
     
     // Store process handle
-    if let Ok(state) = app.try_state::<AppState>() {
+    if let Some(state) = app.try_state::<AppState>() {
         *state.backend_process.lock().unwrap() = Some(child);
     }
     
