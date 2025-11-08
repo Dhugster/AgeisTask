@@ -111,22 +111,32 @@ if (SESSION_SECRET.length < 32) {
   );
 }
 
+const forceHttps = process.env.FORCE_HTTPS === 'true';
+const useSecureCookies = isProduction || forceHttps;
+const configuredSameSite = (process.env.SESSION_COOKIE_SAMESITE || '').toLowerCase();
+const validSameSiteValues = new Set(['lax', 'strict', 'none']);
+let sameSiteMode = validSameSiteValues.has(configuredSameSite)
+  ? configuredSameSite
+  : (useSecureCookies ? 'none' : 'lax');
+
+if (sameSiteMode === 'none' && !useSecureCookies) {
+  logger.warn(
+    'SESSION_COOKIE_SAMESITE=none requires secure cookies; falling back to SameSite=lax for development.'
+  );
+  sameSiteMode = 'lax';
+}
+
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   name: 'repo-resume.sid', // Don't use default 'connect.sid'
   cookie: {
-    // For Tauri HTTPS (https://tauri.localhost) -> HTTP backend (localhost:3001)
-    // Browsers allow secure cookies on localhost even over HTTP in development
-    // In production with HTTPS backend, this should be true
-    secure: isProduction || process.env.FORCE_HTTPS === 'true',
+    secure: useSecureCookies,
     httpOnly: true,
-    // 'lax' allows cookies in cross-origin GET requests (Tauri -> localhost:3001)
-    // Changed from 'strict' which blocks all cross-origin cookie sending
-    sameSite: 'lax', // Allows cross-origin requests from Tauri
+    sameSite: sameSiteMode, // Balance CSRF protection with cross-site auth flows
     maxAge: 8 * 60 * 60 * 1000, // 8 hours (reduced from 24)
-    domain: process.env.COOKIE_DOMAIN // Explicit domain if needed (leave undefined for localhost)
+    domain: process.env.COOKIE_DOMAIN // Explicit domain if needed
   }
 }));
 
