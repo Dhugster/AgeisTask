@@ -1,5 +1,6 @@
 const { User, UserSettings } = require('../models');
 const logger = require('../utils/logger');
+const { createAuthToken } = require('../utils/authToken');
 
 /**
  * GitHub OAuth callback handler
@@ -22,7 +23,16 @@ const githubCallback = async (req, res) => {
     
     // Redirect to frontend
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    res.redirect(`${frontendUrl}/dashboard?login=success`);
+    const shouldEmbedToken = /tauri\.localhost|tauri:\/\//i.test(frontendUrl);
+    const redirectUrl = new URL(`${frontendUrl}/dashboard`);
+    redirectUrl.searchParams.set('login', 'success');
+
+    if (shouldEmbedToken) {
+      const sessionToken = createAuthToken(user);
+      redirectUrl.searchParams.set('sessionToken', sessionToken);
+    }
+
+    res.redirect(redirectUrl.toString());
   } catch (error) {
     logger.error('GitHub callback error:', error);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';

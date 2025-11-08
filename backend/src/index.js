@@ -9,11 +9,12 @@ const session = require('express-session');
 const passport = require('passport');
 const rateLimit = require('express-rate-limit');
 
-const { sequelize } = require('./models');
+const { sequelize, User } = require('./models');
 const logger = require('./utils/logger');
 const routes = require('./routes');
 const { errorHandler } = require('./middleware/errorHandler');
 const swaggerSetup = require('./config/swagger');
+const { verifyAuthToken } = require('./utils/authToken');
 
 // Initialize Express app
 const app = express();
@@ -30,7 +31,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'"], // Consider removing unsafe-inline
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "https://api.github.com", "http://localhost:3001"],
+      connectSrc: ["'self'", "https://api.github.com", "http://localhost:3001", "https://tauri.localhost"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
@@ -154,6 +155,49 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 require('./config/passport');
+
+// Token-based auth support (for desktop app)
+app.use(async (req, res, next) => {
+  if (req.user) {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || typeof authHeader !== 'string') {
+    return next();
+  }
+
+  const [scheme, token] = authHeader.split(' ');
+  if (!token || scheme.toLowerCase() !== 'bearer') {
+    return next();
+  }
+
+  try {
+    const payload = verifyAuthToken(token);
+    if (!payload?.sub) {
+      return next();
+    }
+
+    const user = await User.findByPk(payload.sub);
+    if (!user) {
+      return next();
+    }
+
+    req.user = user;
+    req.authStrategy = 'token';
+    if (!req.isAuthenticated) {
+      req.isAuthenticated = () => true;
+    }
+  } catch (error) {
+    logger.warn('Invalid auth token received', {
+      message: error.message,
+      path: req.path,
+      ip: req.ip
+    });
+  }
+
+  return next();
+});
 
 // Rate limiting - stricter limits
 const apiLimiter = rateLimit({

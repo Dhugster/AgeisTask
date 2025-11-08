@@ -4,7 +4,7 @@ const logger = require('../utils/logger');
  * Middleware to check if user is authenticated
  */
 const isAuthenticated = (req, res, next) => {
-  if (req.isAuthenticated && req.isAuthenticated()) {
+  if ((req.isAuthenticated && req.isAuthenticated()) || req.user) {
     return next();
   }
   

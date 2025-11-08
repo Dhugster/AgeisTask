@@ -33,16 +33,20 @@ class RepositoryAnalyzer {
       const repoData = await this.githubClient.getRepository(owner, repo);
       const defaultBranch = repoData.default_branch || 'main';
 
+      // Resolve branch tree SHA
+      const branchData = await this.githubClient.getBranch(owner, repo, defaultBranch);
+      const treeSha = branchData?.commit?.commit?.tree?.sha;
+      if (!treeSha) {
+        throw new Error(`Unable to resolve tree SHA for branch ${defaultBranch}`);
+      }
+
       // Get repository tree
-      const tree = await this.githubClient.getTree(
-        owner,
-        repo,
-        defaultBranch,
-        true
-      );
+      const tree = await this.githubClient.getTree(owner, repo, treeSha, true);
+
+      const treeItems = tree?.tree || [];
 
       // Filter files to analyze (only source code files)
-      const filesToAnalyze = this.filterAnalyzableFiles(tree.tree);
+      const filesToAnalyze = this.filterAnalyzableFiles(treeItems);
       logger.info(`Found ${filesToAnalyze.length} files to analyze`);
 
       // Analyze files in batches to avoid rate limiting

@@ -75,6 +75,27 @@ class GitHubClient {
   }
 
   /**
+   * Get branch information
+   * @param {string} owner - Repository owner
+   * @param {string} repo - Repository name
+   * @param {string} branch - Branch name
+   * @returns {Promise<Object>} Branch details
+   */
+  async getBranch(owner, repo, branch) {
+    try {
+      const { data } = await this.octokit.repos.getBranch({
+        owner,
+        repo,
+        branch
+      });
+      return data;
+    } catch (error) {
+      logger.error(`Error fetching branch ${branch} for ${owner}/${repo}:`, error);
+      throw new Error(`Failed to fetch branch information: ${error.message}`);
+    }
+  }
+
+  /**
    * Get file content as text
    * @param {string} owner - Repository owner
    * @param {string} repo - Repository name

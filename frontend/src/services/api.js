@@ -49,6 +49,92 @@ const api = axios.create({
   },
 });
 
+const isBrowser = typeof window !== 'undefined';
+const TOKEN_STORAGE_KEY = 'repoResumeToken';
+
+const safeGetItem = (key) => {
+  if (!isBrowser) return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch (error) {
+    console.warn('localStorage getItem failed:', error);
+    return null;
+  }
+};
+
+const safeSetItem = (key, value) => {
+  if (!isBrowser) return;
+  try {
+    if (value === null) {
+      window.localStorage.removeItem(key);
+    } else {
+      window.localStorage.setItem(key, value);
+    }
+  } catch (error) {
+    console.warn('localStorage setItem failed:', error);
+  }
+};
+
+const applyAuthHeader = (token) => {
+  if (!isDesktop) {
+    delete api.defaults.headers.common.Authorization;
+    return;
+  }
+
+  if (token) {
+    api.defaults.headers.common.Authorization = `Bearer ${token}`;
+  } else {
+    delete api.defaults.headers.common.Authorization;
+  }
+};
+
+const getStoredToken = () => safeGetItem(TOKEN_STORAGE_KEY);
+
+const setStoredToken = (token) => {
+  safeSetItem(TOKEN_STORAGE_KEY, token ?? null);
+  applyAuthHeader(token);
+};
+
+const clearStoredToken = () => {
+  safeSetItem(TOKEN_STORAGE_KEY, null);
+  applyAuthHeader(null);
+};
+
+const bootstrapAuthTokenFromStorage = () => {
+  if (!isDesktop) {
+    applyAuthHeader(null);
+    return;
+  }
+  const token = getStoredToken();
+  if (token) {
+    applyAuthHeader(token);
+  }
+};
+
+bootstrapAuthTokenFromStorage();
+
+export const bootstrapAuthTokenFromUrl = () => {
+  if (!isBrowser || !isDesktop) return;
+
+  try {
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get('sessionToken');
+
+    if (token) {
+      setStoredToken(token);
+      url.searchParams.delete('sessionToken');
+      const newSearch = url.searchParams.toString();
+      const newUrl = `${url.pathname}${newSearch ? `?${newSearch}` : ''}${url.hash}`;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  } catch (error) {
+    console.warn('Failed to bootstrap auth token from URL:', error);
+  }
+};
+
+export const clearAuthToken = () => clearStoredToken();
+export const getAuthToken = () => getStoredToken();
+
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
@@ -65,6 +151,9 @@ api.interceptors.response.use(
     return response.data;
   },
   (error) => {
+    if (error.response?.status === 401 && getStoredToken()) {
+      clearStoredToken();
+    }
     const message = error.response?.data?.message || error.message || 'An error occurred';
     return Promise.reject({ ...error, message });
   }

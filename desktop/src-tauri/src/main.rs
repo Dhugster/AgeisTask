@@ -7,6 +7,7 @@ use tauri::{
     CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
     WindowEvent,
 };
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 struct AppState {
     backend_process: Mutex<Option<Child>>,
@@ -320,17 +321,35 @@ async fn start_backend_server(app: tauri::AppHandle) -> Result<(), Box<dyn std::
 
     // Preserve FRONTEND_URL if provided, otherwise fall back to tauri scheme
     let frontend_url =
-        std::env::var("FRONTEND_URL").unwrap_or_else(|_| "tauri://localhost".to_string());
+        std::env::var("FRONTEND_URL").unwrap_or_else(|_| "https://tauri.localhost".to_string());
     child_builder.env("FRONTEND_URL", frontend_url);
 
-    // Capture stderr to see backend errors
+    // Capture backend output
     child_builder.stderr(std::process::Stdio::piped());
     child_builder.stdout(std::process::Stdio::piped());
 
     let child = child_builder.spawn();
 
     match child {
-        Ok(process) => {
+        Ok(mut process) => {
+            if let Some(stdout) = process.stdout.take() {
+                tokio::spawn(async move {
+                    let mut lines = BufReader::new(stdout).lines();
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        println!("[backend] {}", line);
+                    }
+                });
+            }
+
+            if let Some(stderr) = process.stderr.take() {
+                tokio::spawn(async move {
+                    let mut lines = BufReader::new(stderr).lines();
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        eprintln!("[backend][err] {}", line);
+                    }
+                });
+            }
+
             // Store process handle
             if let Some(state) = app.try_state::<AppState>() {
                 *state.backend_process.lock().unwrap() = Some(process);

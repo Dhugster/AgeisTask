@@ -1,4 +1,4 @@
-const { Repository, Task, Analysis, UserSettings } = require('../models');
+const { Repository, Task, Analysis, UserSettings, sequelize } = require('../models');
 const GitHubClient = require('../services/github/client');
 const RepositoryAnalyzer = require('../services/github/analyzer');
 const logger = require('../utils/logger');
@@ -190,34 +190,46 @@ const analyzeRepository = async (req, res) => {
       const analyzer = new RepositoryAnalyzer(accessToken);
       const results = await analyzer.analyzeRepository(repository, userSettings);
       
-      // Update repository
-      await repository.update({
-        health_score: results.healthMetrics?.overall_health || 0,
-        health_metrics: results.healthMetrics || {},
-        last_analyzed_at: new Date(),
-        last_commit_at: results.lastCommit?.commit?.author?.date || null
-      });
-      
-      // Save tasks (use repository's user_id if available, otherwise null for public repos)
-      const taskUserId = repository.user_id || req.user?.id || null;
-      for (const taskData of results.tasks) {
-        await Task.create({
-          ...taskData,
-          repository_id: repository.id,
-          user_id: taskUserId
-        });
+      if (!results.success) {
+        throw new Error(results.error || 'Repository analysis failed');
       }
       
-      // Update analysis
-      await analysis.update({
-        status: 'completed',
-        completed_at: new Date(),
-        duration_ms: results.stats.duration,
-        tasks_found: results.stats.tasksFound,
-        files_analyzed: results.stats.filesAnalyzed,
-        lines_analyzed: results.stats.linesAnalyzed,
-        analysis_results: results,
-        health_metrics: results.healthMetrics
+      const taskUserId = repository.user_id || req.user?.id || null;
+      
+      await sequelize.transaction(async (transaction) => {
+        await repository.update({
+          health_score: results.healthMetrics?.overall_health || 0,
+          health_metrics: results.healthMetrics || {},
+          last_analyzed_at: new Date(),
+          last_commit_at: results.lastCommit?.commit?.author?.date || null
+        }, { transaction });
+        
+        await Task.destroy({
+          where: { repository_id: repository.id },
+          transaction
+        });
+        
+        if (Array.isArray(results.tasks) && results.tasks.length > 0) {
+          const createPromises = results.tasks.map((taskData) =>
+            Task.create({
+              ...taskData,
+              repository_id: repository.id,
+              user_id: taskUserId
+            }, { transaction })
+          );
+          await Promise.all(createPromises);
+        }
+        
+        await analysis.update({
+          status: 'completed',
+          completed_at: new Date(),
+          duration_ms: results.stats.duration,
+          tasks_found: results.stats.tasksFound,
+          files_analyzed: results.stats.filesAnalyzed,
+          lines_analyzed: results.stats.linesAnalyzed,
+          analysis_results: results,
+          health_metrics: results.healthMetrics
+        }, { transaction });
       });
       
       logger.info(`Analysis completed for repository ${repository.full_name}`);

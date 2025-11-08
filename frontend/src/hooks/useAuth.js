@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { authAPI } from '../services/api';
+import { authAPI, clearAuthToken } from '../services/api';
 import { toast } from 'react-toastify';
 
 export function useAuth() {
@@ -24,6 +24,7 @@ export function useAuth() {
     } catch (error) {
       toast.error('Logout failed');
     }
+    clearAuthToken();
   };
 
   const loginWithGithub = () => {
