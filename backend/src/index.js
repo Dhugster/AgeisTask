@@ -212,9 +212,22 @@ const startServer = async () => {
       }
 
       try {
-        const syncOptions = canAlter ? { alter: true } : undefined;
+        const syncOptions = {};
+
+        if (process.env.SEQUELIZE_SYNC_FORCE === 'true') {
+          syncOptions.force = true;
+        }
+
+        if (canAlter) {
+          syncOptions.alter = true;
+        } else {
+          syncOptions.alter = false;
+        }
+
         await sequelize.sync(syncOptions);
-        logger.info(`Database synchronized${canAlter ? ' (alter)' : ''}`);
+        logger.info(
+          `Database synchronized${syncOptions.force ? ' (force)' : canAlter ? ' (alter)' : ''}`
+        );
       } catch (syncError) {
         logger.error('Database synchronization failed:', syncError);
         throw syncError;
