@@ -10,6 +10,7 @@ const API_BASE_URL = isDesktop
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
+  timeout: 5000, // 5 second timeout
   headers: {
     'Content-Type': 'application/json',
   },

@@ -5,8 +5,9 @@ use tauri::{
     CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
     WindowEvent,
 };
-use std::process::{Command, Child};
+use std::process::{Command, Child, Stdio};
 use std::sync::Mutex;
+use std::path::PathBuf;
 
 struct AppState {
     backend_process: Mutex<Option<Child>>,
@@ -149,6 +150,61 @@ async fn minimize_to_tray(window: tauri::Window) -> Result<(), String> {
     window.hide().map_err(|e| e.to_string())
 }
 
+fn find_node_executable(default_cmd: &str) -> Option<String> {
+    // First try the default command (should work if in PATH)
+    if Command::new(default_cmd).arg("--version").output().is_ok() {
+        return Some(default_cmd.to_string());
+    }
+    
+    // Try common Windows installation paths
+    #[cfg(target_os = "windows")]
+    {
+        let common_paths = vec![
+            r"C:\Program Files\nodejs\node.exe",
+            r"C:\Program Files (x86)\nodejs\node.exe",
+            r"C:\nodejs\node.exe",
+        ];
+        
+        for path in common_paths {
+            if std::path::Path::new(path).exists() {
+                if Command::new(path).arg("--version").output().is_ok() {
+                    return Some(path.to_string());
+                }
+            }
+        }
+        
+        // Try using 'where' command
+        if let Ok(output) = Command::new("where").arg("node").output() {
+            if let Ok(path_str) = String::from_utf8(output.stdout) {
+                let path = path_str.lines().next().unwrap_or("").trim();
+                if !path.is_empty() && std::path::Path::new(path).exists() {
+                    return Some(path.to_string());
+                }
+            }
+        }
+    }
+    
+    // Try common Unix paths
+    #[cfg(not(target_os = "windows"))]
+    {
+        let common_paths = vec![
+            "/usr/bin/node",
+            "/usr/local/bin/node",
+            "/opt/homebrew/bin/node",
+        ];
+        
+        for path in common_paths {
+            if std::path::Path::new(path).exists() {
+                if Command::new(path).arg("--version").output().is_ok() {
+                    return Some(path.to_string());
+                }
+            }
+        }
+    }
+    
+    None
+}
+
 async fn start_backend_server(app: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // Check if backend is already running
     if reqwest::get("http://localhost:3001/health").await.is_ok() {
@@ -166,38 +222,86 @@ async fn start_backend_server(app: tauri::AppHandle) -> Result<(), Box<dyn std::
     let exe_path = std::env::current_exe()?;
     let exe_dir = exe_path.parent().unwrap();
     
+    println!("Executable directory: {:?}", exe_dir);
+    
     // Look for backend in common locations
+    // From target/release/, we need to go up 4 levels to reach project root:
+    // target/release/ -> target/ -> src-tauri/ -> desktop/ -> project root
+    let project_root = exe_dir.join("../../../../");
     let backend_paths = vec![
-        exe_dir.join("../../backend/src/index.js"),  // If running from target/release
-        exe_dir.join("../backend/src/index.js"),      // If bundled
-        exe_dir.join("backend/src/index.js"),          // If in same directory
+        project_root.join("backend/src/index.js"),      // From target/release (correct path)
+        exe_dir.join("../../../../backend/src/index.js"), // Explicit alternative
+        exe_dir.join("../../../backend/src/index.js"),   // If in different location
+        exe_dir.join("../../backend/src/index.js"),       // Alternative path
+        exe_dir.join("../backend/src/index.js"),         // If bundled
+        exe_dir.join("backend/src/index.js"),           // If in same directory
     ];
     
     let mut backend_found = false;
     let mut backend_dir = exe_dir.to_path_buf();
+    let mut backend_script_path = String::new();
     
     for backend_path in &backend_paths {
         if backend_path.exists() {
-            backend_dir = backend_path.parent().unwrap().parent().unwrap().to_path_buf();
+            // Calculate project root: backend_path is "backend/src/index.js"
+            // Go up 3 levels: index.js -> src -> backend -> project root
+            let backend_folder = backend_path.parent().unwrap().parent().unwrap(); // backend/
+            backend_dir = backend_folder.parent().unwrap().to_path_buf(); // project root
+            
+            // Script path relative to project root: "backend/src/index.js"
+            backend_script_path = backend_path.strip_prefix(&backend_dir)
+                .map(|p| p.to_string_lossy().replace("\\", "/"))
+                .unwrap_or_else(|_| {
+                    // Fallback: construct relative path manually
+                    format!("backend/src/index.js")
+                });
+            
             backend_found = true;
             println!("Found backend at: {:?}", backend_path);
+            println!("Project root: {:?}", backend_dir);
+            println!("Backend script (relative): {}", backend_script_path);
             break;
         }
     }
     
     if !backend_found {
-        eprintln!("Warning: Backend not found. App will try to connect to existing server.");
+        eprintln!("Warning: Backend not found in any of these locations:");
+        for path in &backend_paths {
+            eprintln!("  - {:?} (exists: {})", path, path.exists());
+        }
+        eprintln!("App will try to connect to existing server.");
+        eprintln!("To start backend manually: cd backend && npm start");
         return Ok(()); // Don't fail, just try to connect
     }
     
+    // Find Node.js executable
+    let node_path = find_node_executable(node_cmd);
+    let node_cmd_to_use = match &node_path {
+        Some(path) => {
+            println!("Found Node.js at: {:?}", path);
+            path.as_str()
+        }
+        None => {
+            eprintln!("Warning: Node.js not found in PATH. Trying '{}' anyway...", node_cmd);
+            node_cmd
+        }
+    };
+    
     // Start Node.js backend process
-    let child = Command::new(node_cmd)
+    println!("Starting backend: {} in directory: {:?}", backend_script_path, backend_dir);
+    let mut child_builder = Command::new(node_cmd_to_use);
+    child_builder
         .current_dir(&backend_dir)
-        .arg("backend/src/index.js")
+        .arg(&backend_script_path)
         .env("NODE_ENV", "production")
         .env("PORT", "3001")
-        .env("FRONTEND_URL", "http://localhost:3001")
-        .spawn();
+        .env("FRONTEND_URL", "http://localhost:3001");
+    
+    // Capture stderr to see backend errors
+    child_builder.stderr(std::process::Stdio::piped());
+    child_builder.stdout(std::process::Stdio::piped());
+    
+    let child = child_builder.spawn();
     
     match child {
         Ok(process) => {

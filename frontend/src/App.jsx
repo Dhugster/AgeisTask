@@ -7,11 +7,26 @@ import RepositoryDetail from './pages/RepositoryDetail';
 import TasksPage from './pages/TasksPage';
 import SettingsPage from './pages/SettingsPage';
 import LoadingSpinner from './components/LoadingSpinner';
+import BackendError from './components/BackendError';
 
 function App() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, error } = useAuth();
+
+  // Check if error is a connection error
+  const isConnectionError = error && (
+    error.code === 'ECONNREFUSED' ||
+    error.code === 'ERR_NETWORK' ||
+    error.message?.includes('timeout') ||
+    error.message?.includes('Network Error') ||
+    (error.response === undefined && error.request !== undefined)
+  );
+
+  if (isConnectionError) {
+    return <BackendError onRetry={() => window.location.reload()} />;
+  }
 
   if (isLoading) {
+    // Show loading for max 10 seconds, then show error
     return <LoadingSpinner fullScreen />;
   }
 
