@@ -107,15 +107,31 @@ if (SESSION_SECRET.length < 32) {
   );
 }
 
+const isProduction = process.env.NODE_ENV === 'production';
+const forceHttps = process.env.FORCE_HTTPS === 'true';
+const useSecureCookies = isProduction || forceHttps;
+const configuredSameSite = (process.env.SESSION_COOKIE_SAMESITE || '').toLowerCase();
+const validSameSiteValues = new Set(['lax', 'strict', 'none']);
+let sameSiteMode = validSameSiteValues.has(configuredSameSite)
+  ? configuredSameSite
+  : (useSecureCookies ? 'none' : 'lax');
+
+if (sameSiteMode === 'none' && !useSecureCookies) {
+  logger.warn(
+    'SESSION_COOKIE_SAMESITE=none requires secure cookies; falling back to SameSite=lax for development.'
+  );
+  sameSiteMode = 'lax';
+}
+
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   name: 'repo-resume.sid', // Don't use default 'connect.sid'
   cookie: {
-    secure: process.env.NODE_ENV === 'production' || process.env.FORCE_HTTPS === 'true',
+    secure: useSecureCookies,
     httpOnly: true,
-    sameSite: 'strict', // CSRF protection
+    sameSite: sameSiteMode, // Balance CSRF protection with cross-site auth flows
     maxAge: 8 * 60 * 60 * 1000, // 8 hours (reduced from 24)
     domain: process.env.COOKIE_DOMAIN // Explicit domain if needed
   }
