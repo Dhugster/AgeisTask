@@ -20,12 +20,66 @@ const githubCallback = async (req, res) => {
     
     logger.info(`User ${user.username} logged in successfully`);
     
-    // Redirect to frontend
+    // Detect if running in Tauri mode (FRONTEND_URL is http://localhost:3001)
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const isTauri = frontendUrl === 'http://localhost:3001';
+    
+    if (isTauri) {
+      // For Tauri opened in external browser: show a simple page and attempt to close
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8" />
+          <title>Login Successful</title>
+          <style>
+            body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 2rem; }
+            .ok { color: #16a34a; font-weight: 600; }
+          </style>
+        </head>
+        <body>
+          <p class="ok">✓ Login successful.</p>
+          <p>You can now return to the RepoResume app. This window can be closed.</p>
+          <script>
+            try { window.close(); } catch (e) {}
+          </script>
+        </body>
+        </html>
+      `);
+    }
+    
+    // For web browser, use standard redirect
     res.redirect(`${frontendUrl}/dashboard?login=success`);
   } catch (error) {
     logger.error('GitHub callback error:', error);
+    
+    // Detect if running in Tauri mode
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const isTauri = frontendUrl === 'http://localhost:3001';
+    
+    if (isTauri) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8" />
+          <title>Login Failed</title>
+          <style>
+            body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 2rem; }
+            .err { color: #dc2626; font-weight: 600; }
+          </style>
+        </head>
+        <body>
+          <p class="err">✗ Login failed.</p>
+          <p>Please return to the RepoResume app and try again. This window can be closed.</p>
+          <script>
+            try { window.close(); } catch (e) {}
+          </script>
+        </body>
+        </html>
+      `);
+    }
+    
     res.redirect(`${frontendUrl}?login=error`);
   }
 };

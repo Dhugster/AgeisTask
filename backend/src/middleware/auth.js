@@ -8,11 +8,14 @@ const isAuthenticated = (req, res, next) => {
     return next();
   }
   
-  logger.warn('Unauthorized access attempt', { 
-    path: req.path, 
-    method: req.method,
-    ip: req.ip 
-  });
+  // Reduce noise: /api/auth/me is polled frequently; log at debug level
+  const isAuthStatusPath = req.originalUrl?.includes('/api/auth/me') || req.path === '/auth/me';
+  const logPayload = { path: req.path, method: req.method, ip: req.ip };
+  if (isAuthStatusPath) {
+    logger.debug('Unauthorized auth status check', logPayload);
+  } else {
+    logger.warn('Unauthorized access attempt', logPayload);
+  }
   
   return res.status(401).json({
     error: 'Unauthorized',

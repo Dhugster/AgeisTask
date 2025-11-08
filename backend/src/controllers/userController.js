@@ -66,6 +66,43 @@ const getStatistics = async (req, res) => {
     })
   ]);
   
+  // Single pass through tasks array to calculate all statistics
+  const taskStats = {
+    open: 0,
+    in_progress: 0,
+    completed: 0,
+    snoozed: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    by_category: {}
+  };
+  
+  const categories = ['TODO', 'FIXME', 'BUG', 'SECURITY', 'INCOMPLETE_CODE'];
+  categories.forEach(cat => taskStats.by_category[cat] = 0);
+  
+  // Single loop to calculate all task statistics
+  for (const task of tasks) {
+    // Count by status
+    if (task.status in taskStats) {
+      taskStats[task.status]++;
+    }
+    
+    // Count by priority
+    if (task.priority_score >= 20) {
+      taskStats.high++;
+    } else if (task.priority_score >= 10) {
+      taskStats.medium++;
+    } else {
+      taskStats.low++;
+    }
+    
+    // Count by category
+    if (task.category && task.category in taskStats.by_category) {
+      taskStats.by_category[task.category]++;
+    }
+  }
+  
   const stats = {
     repositories: {
       total: repositories.length,
@@ -76,24 +113,14 @@ const getStatistics = async (req, res) => {
     },
     tasks: {
       total: tasks.length,
-      open: tasks.filter(t => t.status === 'open').length,
-      in_progress: tasks.filter(t => t.status === 'in_progress').length,
-      completed: tasks.filter(t => t.status === 'completed').length,
-      snoozed: tasks.filter(t => t.status === 'snoozed').length,
-      by_category: {}
+      ...taskStats
     },
     priority: {
-      high: tasks.filter(t => t.priority_score >= 20).length,
-      medium: tasks.filter(t => t.priority_score >= 10 && t.priority_score < 20).length,
-      low: tasks.filter(t => t.priority_score < 10).length
+      high: taskStats.high,
+      medium: taskStats.medium,
+      low: taskStats.low
     }
   };
-  
-  // Count tasks by category
-  const categories = ['TODO', 'FIXME', 'BUG', 'SECURITY', 'INCOMPLETE_CODE'];
-  for (const category of categories) {
-    stats.tasks.by_category[category] = tasks.filter(t => t.category === category).length;
-  }
   
   res.json(stats);
 };

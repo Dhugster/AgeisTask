@@ -197,14 +197,14 @@ app.use(passport.initialize());
 app.use(passport.session());
 require('./config/passport');
 
-// Rate limiting - stricter limits
+// Rate limiting - more lenient for development
 const apiLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 50, // Reduced from 100
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200, // Increased for development
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
-  skipSuccessfulRequests: false,
+  skipSuccessfulRequests: true, // Don't count successful requests
 });
 
 // Stricter rate limiting for authentication endpoints

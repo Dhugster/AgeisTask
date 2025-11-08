@@ -71,4 +71,21 @@ router.get('/me', isAuthenticated, authController.getCurrentUser);
  */
 router.get('/failure', authController.authFailure);
 
+/**
+ * Test endpoint to verify OAuth configuration
+ */
+router.get('/test', (req, res) => {
+  const passport = require('passport');
+  const strategies = Object.keys(passport._strategies || {});
+  
+  res.json({
+    message: 'Auth routes are working',
+    githubStrategyRegistered: strategies.includes('github'),
+    availableStrategies: strategies,
+    clientIdConfigured: !!process.env.GITHUB_CLIENT_ID,
+    clientSecretConfigured: !!process.env.GITHUB_CLIENT_SECRET,
+    callbackUrl: process.env.GITHUB_CALLBACK_URL || 'http://localhost:3001/api/auth/github/callback'
+  });
+});
+
 module.exports = router;

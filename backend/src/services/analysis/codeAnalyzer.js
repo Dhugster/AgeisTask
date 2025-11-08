@@ -167,20 +167,25 @@ class CodeAnalyzer {
    */
   findTaskMarkers(comment, keywords) {
     const tasks = [];
+    const commentText = comment.text;
 
+    // Single pass through keywords - break early when marker found to avoid duplicates
     for (const [category, markers] of Object.entries(keywords)) {
+      // Find first matching marker for this category
       for (const marker of markers) {
-        if (comment.text.includes(marker)) {
+        if (commentText.includes(marker)) {
           // Extract the actual task description
-          const markerIndex = comment.text.indexOf(marker);
-          const description = comment.text.substring(markerIndex + marker.length).trim();
+          const markerIndex = commentText.indexOf(marker);
+          const description = commentText.substring(markerIndex + marker.length).trim();
           
           tasks.push({
             category,
             marker,
-            description: description || comment.text,
+            description: description || commentText,
             lineNumber: comment.lineNumber
           });
+          // Break to avoid adding same category multiple times
+          break;
         }
       }
     }

@@ -125,11 +125,27 @@ function exportMarkdown(res, tasks) {
     ''
   ];
   
-  // Group by priority
-  const critical = tasks.filter(t => t.priority_score >= 20);
-  const high = tasks.filter(t => t.priority_score >= 10 && t.priority_score < 20);
-  const medium = tasks.filter(t => t.priority_score >= 5 && t.priority_score < 10);
-  const low = tasks.filter(t => t.priority_score < 5);
+  // Group by priority in a single pass
+  const priorityGroups = {
+    critical: [],
+    high: [],
+    medium: [],
+    low: []
+  };
+  
+  for (const task of tasks) {
+    if (task.priority_score >= 20) {
+      priorityGroups.critical.push(task);
+    } else if (task.priority_score >= 10) {
+      priorityGroups.high.push(task);
+    } else if (task.priority_score >= 5) {
+      priorityGroups.medium.push(task);
+    } else {
+      priorityGroups.low.push(task);
+    }
+  }
+  
+  const { critical, high, medium, low } = priorityGroups;
   
   const addTaskSection = (title, taskList) => {
     if (taskList.length === 0) return;

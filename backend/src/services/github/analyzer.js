@@ -57,12 +57,12 @@ class RepositoryAnalyzer {
           batch.map(file => this.analyzeFile(owner, repo, file, defaultBranch))
         );
 
+        // Process batch results efficiently
         for (const result of batchResults) {
-          if (result) {
-            analysisResults.push(result);
-            filesAnalyzed++;
-            linesAnalyzed += result.lineCount || 0;
-          }
+          if (!result) continue;
+          analysisResults.push(result);
+          filesAnalyzed++;
+          linesAnalyzed += result.lineCount || 0;
         }
 
         // Small delay to respect rate limits
