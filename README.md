@@ -348,7 +348,7 @@ lsof -ti:5173 | xargs kill -9  # Frontend
 For issues and questions:
 - 📧 Email: support@ageis.ai
 - 🐛 Issues: GitHub Issues
-- 💬 Discord: [Community Server="https://discord.gg/wNBGGDJQSJ"]
+- 💬 Discord: [Community Server](https://discord.gg/wNBGGDJQSJ)
 
 ## 🎉 Acknowledgments
 
