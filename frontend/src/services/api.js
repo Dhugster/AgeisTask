@@ -1,6 +1,11 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// In desktop app, always use localhost:3001
+// In web app, use relative path or env variable
+const isDesktop = window.__TAURI__ !== undefined;
+const API_BASE_URL = isDesktop 
+  ? 'http://localhost:3001/api'
+  : (import.meta.env.VITE_API_URL || '/api');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
