@@ -18,6 +18,7 @@ const swaggerSetup = require('./config/swagger');
 // Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3001;
+const isProduction = process.env.NODE_ENV === 'production';
 
 // Trust proxy for rate limiting behind reverse proxy
 app.set('trust proxy', 1);
@@ -49,25 +50,72 @@ app.use(helmet({
 }));
 
 // CORS configuration - restrict to known origins
-const allowedOrigins = [
+const defaultAllowedOrigins = [
   process.env.FRONTEND_URL,
   'http://localhost:5173',
+  'https://localhost:5173',
   'http://localhost:3000',
-  'tauri://localhost', // For desktop app
-].filter(Boolean);
+  'https://localhost:3000',
+  'tauri://localhost', // Tauri v1 (custom scheme)
+  'http://tauri.localhost', // Tauri v2 dev in loose mode
+  'https://tauri.localhost', // Tauri v2 secure mode
+];
+
+const parsedAdditionalOrigins = (process.env.CORS_ADDITIONAL_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
+const normalizeOrigin = (origin) => {
+  if (typeof origin !== 'string') {
+    throw new TypeError('Origin must be a string');
+  }
+
+  return origin.replace(/\/+$/, '').toLowerCase();
+};
+
+const allowedOriginSet = new Set();
+
+for (const origin of [...defaultAllowedOrigins, ...parsedAdditionalOrigins].filter(Boolean)) {
+  try {
+    allowedOriginSet.add(normalizeOrigin(origin));
+  } catch (error) {
+    logger.warn(`Skipping invalid configured CORS origin "${origin}": ${error.message}`);
+  }
+}
+
+const isNullLikeOrigin = (origin) => origin === 'null';
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) {
+    return false;
+  }
+
+  if (isNullLikeOrigin(origin)) {
+    return !isProduction;
+  }
+
+  try {
+    return allowedOriginSet.has(normalizeOrigin(origin));
+  } catch (error) {
+    logger.warn(`Failed to normalize request origin "${origin}": ${error.message}`);
+    return false;
+  }
+};
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.) in development only
-    if (!origin && process.env.NODE_ENV !== 'production') {
+    // Allow requests with no origin (mobile apps, Postman, server-to-server)
+    if (!origin) {
       return callback(null, true);
     }
-    
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS: Origin ${origin} not allowed`));
+
+    if (isAllowedOrigin(origin)) {
+      return callback(null, true);
     }
+
+    logger.warn(`CORS: Blocked origin ${origin}`);
+    return callback(new Error(`CORS: Origin ${origin} not allowed`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
