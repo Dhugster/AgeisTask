@@ -18,6 +18,7 @@ const swaggerSetup = require('./config/swagger');
 // Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3001;
+const isProduction = process.env.NODE_ENV === 'production';
 
 // Trust proxy for rate limiting behind reverse proxy
 app.set('trust proxy', 1);
@@ -49,27 +50,72 @@ app.use(helmet({
 }));
 
 // CORS configuration - restrict to known origins
-const allowedOrigins = [
+const defaultAllowedOrigins = [
   process.env.FRONTEND_URL,
   'http://localhost:5173',
+  'https://localhost:5173',
   'http://localhost:3000',
-  'tauri://localhost', // For desktop app (Tauri v1)
-  'https://tauri.localhost', // For desktop app (Tauri v2+)
-  'http://tauri.localhost', // Alternative Tauri origin
-].filter(Boolean);
+  'https://localhost:3000',
+  'tauri://localhost', // Tauri v1 (custom scheme)
+  'http://tauri.localhost', // Tauri v2 dev in loose mode
+  'https://tauri.localhost', // Tauri v2 secure mode
+];
+
+const parsedAdditionalOrigins = (process.env.CORS_ADDITIONAL_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
+const normalizeOrigin = (origin) => {
+  if (typeof origin !== 'string') {
+    throw new TypeError('Origin must be a string');
+  }
+
+  return origin.replace(/\/+$/, '').toLowerCase();
+};
+
+const allowedOriginSet = new Set();
+
+for (const origin of [...defaultAllowedOrigins, ...parsedAdditionalOrigins].filter(Boolean)) {
+  try {
+    allowedOriginSet.add(normalizeOrigin(origin));
+  } catch (error) {
+    logger.warn(`Skipping invalid configured CORS origin "${origin}": ${error.message}`);
+  }
+}
+
+const isNullLikeOrigin = (origin) => origin === 'null';
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) {
+    return false;
+  }
+
+  if (isNullLikeOrigin(origin)) {
+    return !isProduction;
+  }
+
+  try {
+    return allowedOriginSet.has(normalizeOrigin(origin));
+  } catch (error) {
+    logger.warn(`Failed to normalize request origin "${origin}": ${error.message}`);
+    return false;
+  }
+};
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.) in development only
-    if (!origin && process.env.NODE_ENV !== 'production') {
+    // Allow requests with no origin (mobile apps, Postman, server-to-server)
+    if (!origin) {
       return callback(null, true);
     }
-    
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS: Origin ${origin} not allowed`));
+
+    if (isAllowedOrigin(origin)) {
+      return callback(null, true);
     }
+
+    logger.warn(`CORS: Blocked origin ${origin}`);
+    return callback(new Error(`CORS: Origin ${origin} not allowed`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
@@ -109,17 +155,40 @@ if (SESSION_SECRET.length < 32) {
   );
 }
 
+// isProduction already declared at line 21, reusing it
+const forceHttps = process.env.FORCE_HTTPS === 'true';
+const useSecureCookies = isProduction || forceHttps;
+const configuredSameSite = (process.env.SESSION_COOKIE_SAMESITE || '').toLowerCase();
+const validSameSiteValues = new Set(['lax', 'strict', 'none']);
+
+// For development with cross-origin requests (frontend on 5173, backend on 3001),
+// we need SameSite=none with secure cookies, or SameSite=lax without
+let sameSiteMode = validSameSiteValues.has(configuredSameSite)
+  ? configuredSameSite
+  : 'lax'; // Changed default to 'lax' for better cross-origin support
+
+if (sameSiteMode === 'none' && !useSecureCookies) {
+  logger.warn(
+    'SESSION_COOKIE_SAMESITE=none requires secure cookies; falling back to SameSite=lax for development.'
+  );
+  sameSiteMode = 'lax';
+}
+
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   name: 'repo-resume.sid', // Don't use default 'connect.sid'
   cookie: {
-    secure: process.env.NODE_ENV === 'production' || process.env.FORCE_HTTPS === 'true',
+    secure: useSecureCookies,
     httpOnly: true,
-    sameSite: 'strict', // CSRF protection
+    sameSite: sameSiteMode, // Balance CSRF protection with cross-site auth flows
     maxAge: 8 * 60 * 60 * 1000, // 8 hours (reduced from 24)
-    domain: process.env.COOKIE_DOMAIN // Explicit domain if needed
+    // Remove domain restriction for localhost development
+    // This allows the cookie to work across different ports on localhost
+    domain: process.env.COOKIE_DOMAIN || undefined,
+    // Ensure cookie path is set to root
+    path: '/'
   }
 }));
 
