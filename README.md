@@ -338,7 +338,7 @@ lsof -ti:5173 | xargs kill -9  # Frontend
 ## 📞 Support
 
 For issues and questions:
-- 📧 Email: support@reporesume.dev
+- 📧 Email: support@ageis.ai
 - 🐛 Issues: GitHub Issues
 - 💬 Discord: [Community Server]
 
