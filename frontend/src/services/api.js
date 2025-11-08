@@ -1,11 +1,44 @@
 import axios from 'axios';
 
-// In desktop app, always use localhost:3001
-// In web app, use relative path or env variable
 const isDesktop = window.__TAURI__ !== undefined;
-const API_BASE_URL = isDesktop 
-  ? 'http://localhost:3001/api'
-  : (import.meta.env.VITE_API_URL || '/api');
+
+const DEFAULT_DESKTOP_API = 'http://localhost:3001/api';
+const inferWebApiBase = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+
+  const hostname = window.location.hostname;
+  const isLocal =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '[::1]';
+
+  if (isLocal) {
+    return DEFAULT_DESKTOP_API;
+  }
+
+  return '/api';
+};
+
+const rawApiBase = isDesktop ? DEFAULT_DESKTOP_API : inferWebApiBase();
+const API_BASE_URL = rawApiBase.replace(/\/+$/, '');
+
+const toRelativePath = (path = '') => path.replace(/^\/+/, '');
+const resolveAbsoluteApiUrl = (path = '') => {
+  const normalizedBase = API_BASE_URL.replace(/\/+$/, '');
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+  if (/^https?:\/\//i.test(normalizedBase)) {
+    return `${normalizedBase}${normalizedPath}`;
+  }
+
+  const prefix = normalizedBase.startsWith('/')
+    ? normalizedBase
+    : `/${normalizedBase}`;
+
+  return `${window.location.origin}${prefix}${normalizedPath}`;
+};
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -41,7 +74,7 @@ api.interceptors.response.use(
 export const authAPI = {
   getCurrentUser: async () => {
     try {
-      return await api.get('/auth/me');
+      return await api.get(toRelativePath('auth/me'));
     } catch (error) {
       if (error.response?.status === 401) {
         return null;
@@ -49,38 +82,39 @@ export const authAPI = {
       throw error;
     }
   },
-  logout: () => api.post('/auth/logout'),
+  logout: () => api.post(toRelativePath('auth/logout')),
   loginWithGithub: () => {
-    window.location.href = `${API_BASE_URL}/auth/github`;
+    const loginUrl = resolveAbsoluteApiUrl('/auth/github');
+    window.location.assign(loginUrl);
   },
 };
 
 // Repositories API
 export const repositoriesAPI = {
-  getAll: () => api.get('/repositories'),
-  getById: (id) => api.get(`/repositories/${id}`),
-  sync: () => api.post('/repositories/sync'),
-  analyze: (id) => api.post(`/repositories/${id}/analyze`),
-  getTasks: (id) => api.get(`/repositories/${id}/tasks`),
-  update: (id, data) => api.put(`/repositories/${id}`, data),
-  delete: (id) => api.delete(`/repositories/${id}`),
+  getAll: () => api.get(toRelativePath('repositories')),
+  getById: (id) => api.get(toRelativePath(`repositories/${id}`)),
+  sync: () => api.post(toRelativePath('repositories/sync')),
+  analyze: (id) => api.post(toRelativePath(`repositories/${id}/analyze`)),
+  getTasks: (id) => api.get(toRelativePath(`repositories/${id}/tasks`)),
+  update: (id, data) => api.put(toRelativePath(`repositories/${id}`), data),
+  delete: (id) => api.delete(toRelativePath(`repositories/${id}`)),
 };
 
 // Tasks API
 export const tasksAPI = {
-  getAll: (params) => api.get('/tasks', { params }),
-  getById: (id) => api.get(`/tasks/${id}`),
-  update: (id, data) => api.put(`/tasks/${id}`, data),
-  complete: (id) => api.post(`/tasks/${id}/complete`),
-  snooze: (id, until) => api.post(`/tasks/${id}/snooze`, { until }),
-  delete: (id) => api.delete(`/tasks/${id}`),
+  getAll: (params) => api.get(toRelativePath('tasks'), { params }),
+  getById: (id) => api.get(toRelativePath(`tasks/${id}`)),
+  update: (id, data) => api.put(toRelativePath(`tasks/${id}`), data),
+  complete: (id) => api.post(toRelativePath(`tasks/${id}/complete`)),
+  snooze: (id, until) => api.post(toRelativePath(`tasks/${id}/snooze`), { until }),
+  delete: (id) => api.delete(toRelativePath(`tasks/${id}`)),
 };
 
 // Users API
 export const usersAPI = {
-  getSettings: () => api.get('/users/settings'),
-  updateSettings: (data) => api.put('/users/settings', data),
-  getStatistics: () => api.get('/users/stats'),
+  getSettings: () => api.get(toRelativePath('users/settings')),
+  updateSettings: (data) => api.put(toRelativePath('users/settings'), data),
+  getStatistics: () => api.get(toRelativePath('users/stats')),
 };
 
 // Export API
@@ -88,11 +122,17 @@ export const exportAPI = {
   exportTasks: (format, repositoryId) => {
     const params = new URLSearchParams({ format });
     if (repositoryId) params.append('repository_id', repositoryId);
-    window.open(`${API_BASE_URL}/export/tasks?${params.toString()}`, '_blank');
+    window.open(
+      `${resolveAbsoluteApiUrl('/export/tasks')}?${params.toString()}`,
+      '_blank'
+    );
   },
   exportRepository: (id, format) => {
     const params = new URLSearchParams({ format });
-    window.open(`${API_BASE_URL}/export/repository/${id}?${params.toString()}`, '_blank');
+    window.open(
+      `${resolveAbsoluteApiUrl(`/export/repository/${id}`)}?${params.toString()}`,
+      '_blank'
+    );
   },
 };
 
