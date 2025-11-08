@@ -63,8 +63,12 @@ app.use(cors({
     if (!origin && process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
-    
-    if (!origin || allowedOrigins.includes(origin)) {
+
+    const isExplicitlyAllowed = origin && allowedOrigins.includes(origin);
+    const isTauriSecure = origin && origin.startsWith('https://tauri.localhost');
+    const isTauriScheme = origin && origin.startsWith('tauri://localhost');
+
+    if (!origin || isExplicitlyAllowed || isTauriSecure || isTauriScheme) {
       callback(null, true);
     } else {
       callback(new Error(`CORS: Origin ${origin} not allowed`));
