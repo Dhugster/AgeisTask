@@ -18,7 +18,7 @@ We take the security of RepoResume seriously. If you believe you have found a se
 - Post about it publicly on social media
 
 ### Please DO:
-- Email us at: security@reporesume.com (replace with actual email)
+- Email us at: security@repo.ageis.ai 
 - Include the following information:
   - Type of issue (e.g., buffer overflow, SQL injection, cross-site scripting, etc.)
   - Full paths of source file(s) related to the issue
