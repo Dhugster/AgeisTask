@@ -65,41 +65,51 @@ app.use(cors({
       return callback(null, true);
     }
 
-  const isExplicitlyAllowed = origin && allowedOrigins.includes(origin);
-  const isTauriOrigin = (() => {
-    if (!origin) return false;
-    if (origin.startsWith('tauri://')) return true;
-    try {
-      const parsed = new URL(origin);
-      if (parsed.hostname === 'tauri.localhost') {
+    const isExplicitlyAllowed = origin && allowedOrigins.includes(origin);
+    const isTauriOrigin = (() => {
+      if (!origin) return false;
+      if (origin.startsWith('tauri://')) return true;
+      if (origin === 'https://tauri.localhost' || origin === 'https://tauri.localhost/') {
         return true;
       }
 
-      // Allow dynamic ports for any explicitly configured host
-      return allowedOrigins.some((allowed) => {
-        if (!allowed || allowed.startsWith('tauri://')) {
-          return false;
-        }
-        try {
-          const allowedUrl = new URL(allowed);
-          return (
-            allowedUrl.hostname === parsed.hostname &&
-            allowedUrl.protocol === parsed.protocol
-          );
-        } catch {
-          return false;
-        }
-      });
-    } catch (error) {
-      logger.warn('Failed to parse origin for CORS check', {
-        origin,
-        error: error.message
-      });
-      return false;
-    }
-  })();
+      // Allow dynamic ports for tauri.localhost
+      const TAURI_BASE = 'https://tauri.localhost';
+      if (origin.startsWith(TAURI_BASE + ':')) {
+        return true;
+      }
 
-  if (!origin || isExplicitlyAllowed || isTauriOrigin) {
+      try {
+        const parsed = new URL(origin);
+
+        if (parsed.hostname === 'tauri.localhost') {
+          return true;
+        }
+
+        return allowedOrigins.some((allowed) => {
+          if (!allowed || allowed.startsWith('tauri://')) {
+            return false;
+          }
+          try {
+            const allowedUrl = new URL(allowed);
+            return (
+              allowedUrl.hostname === parsed.hostname &&
+              allowedUrl.protocol === parsed.protocol
+            );
+          } catch {
+            return false;
+          }
+        });
+      } catch (error) {
+        logger.warn('Failed to parse origin for CORS check', {
+          origin,
+          error: error.message
+        });
+        return false;
+      }
+    })();
+
+    if (!origin || isExplicitlyAllowed || isTauriOrigin) {
       callback(null, true);
     } else {
       callback(new Error(`CORS: Origin ${origin} not allowed`));
