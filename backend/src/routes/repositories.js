@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const repositoryController = require('../controllers/repositoryController');
-const { isAuthenticated } = require('../middleware/auth');
+const { isAuthenticated, optionalAuth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 
-// All repository routes require authentication
-router.use(isAuthenticated);
+// Use optional auth - routes will check if auth is needed
+router.use(optionalAuth);
 
 /**
  * @swagger

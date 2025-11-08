@@ -6,9 +6,14 @@ const { ApiError } = require('../middleware/errorHandler');
 const { Op } = require('sequelize');
 
 /**
- * Get all repositories for authenticated user
+ * Get all repositories for authenticated user (or empty if not authenticated)
  */
 const getRepositories = async (req, res) => {
+  // If not authenticated, return empty array (can analyze public repos by URL)
+  if (!req.user) {
+    return res.json([]);
+  }
+  
   const repositories = await Repository.findAll({
     where: { user_id: req.user.id },
     order: [['last_synced_at', 'DESC']],
@@ -24,14 +29,21 @@ const getRepositories = async (req, res) => {
 };
 
 /**
- * Get repository by ID
+ * Get repository by ID (public repos accessible without auth)
  */
 const getRepository = async (req, res) => {
+  const whereClause = { id: req.params.id };
+  
+  // If authenticated, filter by user_id. If not, only allow public repos
+  if (req.user) {
+    whereClause.user_id = req.user.id;
+  } else {
+    // Allow access to public repos only
+    whereClause.is_private = false;
+  }
+  
   const repository = await Repository.findOne({
-    where: { 
-      id: req.params.id,
-      user_id: req.user.id 
-    },
+    where: whereClause,
     include: [{
       model: Task,
       as: 'tasks'
@@ -42,13 +54,22 @@ const getRepository = async (req, res) => {
     throw new ApiError(404, 'Repository not found');
   }
   
+  // If not authenticated and repo is private, require auth
+  if (!req.user && repository.is_private) {
+    throw new ApiError(401, 'Authentication required to access private repositories');
+  }
+  
   res.json(repository);
 };
 
 /**
- * Sync repositories from GitHub
+ * Sync repositories from GitHub (requires authentication)
  */
 const syncRepositories = async (req, res) => {
+  if (!req.user) {
+    throw new ApiError(401, 'Authentication required to sync repositories');
+  }
+  
   try {
     const githubClient = new GitHubClient(req.user.github_access_token);
     
@@ -115,18 +136,29 @@ const syncRepositories = async (req, res) => {
 };
 
 /**
- * Analyze repository
+ * Analyze repository (public repos can be analyzed without auth)
  */
 const analyzeRepository = async (req, res) => {
+  const whereClause = { id: req.params.id };
+  
+  // If authenticated, filter by user_id. If not, only allow public repos
+  if (req.user) {
+    whereClause.user_id = req.user.id;
+  } else {
+    whereClause.is_private = false;
+  }
+  
   const repository = await Repository.findOne({
-    where: { 
-      id: req.params.id,
-      user_id: req.user.id 
-    }
+    where: whereClause
   });
   
   if (!repository) {
     throw new ApiError(404, 'Repository not found');
+  }
+  
+  // If not authenticated and repo is private, require auth
+  if (!req.user && repository.is_private) {
+    throw new ApiError(401, 'Authentication required to analyze private repositories');
   }
   
   // Create analysis record
@@ -145,11 +177,17 @@ const analyzeRepository = async (req, res) => {
   // Run analysis in background
   (async () => {
     try {
-      const userSettings = await UserSettings.findOne({
-        where: { user_id: req.user.id }
-      });
+      // For public repos without auth, use no token (rate limits apply)
+      const accessToken = req.user?.github_access_token || null;
       
-      const analyzer = new RepositoryAnalyzer(req.user.github_access_token);
+      let userSettings = null;
+      if (req.user) {
+        userSettings = await UserSettings.findOne({
+          where: { user_id: req.user.id }
+        });
+      }
+      
+      const analyzer = new RepositoryAnalyzer(accessToken);
       const results = await analyzer.analyzeRepository(repository, userSettings);
       
       // Update repository
@@ -160,12 +198,13 @@ const analyzeRepository = async (req, res) => {
         last_commit_at: results.lastCommit?.commit?.author?.date || null
       });
       
-      // Save tasks
+      // Save tasks (use repository's user_id if available, otherwise null for public repos)
+      const taskUserId = repository.user_id || req.user?.id || null;
       for (const taskData of results.tasks) {
         await Task.create({
           ...taskData,
           repository_id: repository.id,
-          user_id: req.user.id
+          user_id: taskUserId
         });
       }
       
@@ -194,14 +233,31 @@ const analyzeRepository = async (req, res) => {
 };
 
 /**
- * Get repository tasks
+ * Get repository tasks (public repos accessible without auth)
  */
 const getRepositoryTasks = async (req, res) => {
+  // First check if repository exists and is accessible
+  const repository = await Repository.findOne({
+    where: { id: req.params.id }
+  });
+  
+  if (!repository) {
+    throw new ApiError(404, 'Repository not found');
+  }
+  
+  // If not authenticated and repo is private, require auth
+  if (!req.user && repository.is_private) {
+    throw new ApiError(401, 'Authentication required to access private repository tasks');
+  }
+  
+  // Build where clause - if authenticated, filter by user_id, otherwise get all tasks for repo
+  const whereClause = { repository_id: req.params.id };
+  if (req.user) {
+    whereClause.user_id = req.user.id;
+  }
+  
   const tasks = await Task.findAll({
-    where: {
-      repository_id: req.params.id,
-      user_id: req.user.id
-    },
+    where: whereClause,
     order: [['priority_score', 'DESC']]
   });
   
@@ -209,9 +265,13 @@ const getRepositoryTasks = async (req, res) => {
 };
 
 /**
- * Update repository
+ * Update repository (requires authentication)
  */
 const updateRepository = async (req, res) => {
+  if (!req.user) {
+    throw new ApiError(401, 'Authentication required to update repositories');
+  }
+  
   const repository = await Repository.findOne({
     where: { 
       id: req.params.id,
@@ -234,9 +294,13 @@ const updateRepository = async (req, res) => {
 };
 
 /**
- * Delete repository
+ * Delete repository (requires authentication)
  */
 const deleteRepository = async (req, res) => {
+  if (!req.user) {
+    throw new ApiError(401, 'Authentication required to delete repositories');
+  }
+  
   const repository = await Repository.findOne({
     where: { 
       id: req.params.id,

@@ -1,12 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { repositoriesAPI } from '../services/api';
+import { useAuth } from '../hooks/useAuth';
 import { toast } from 'react-toastify';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { FiRefreshCw, FiGitBranch, FiAlertCircle } from 'react-icons/fi';
+import { FiRefreshCw, FiGitBranch, FiAlertCircle, FiGithub } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
+  const { user, loginWithGithub } = useAuth();
 
   const { data: repositories, isLoading } = useQuery({
     queryKey: ['repositories'],
@@ -20,7 +22,11 @@ export default function Dashboard() {
       toast.success('Repositories synced successfully!');
     },
     onError: (error) => {
-      toast.error(error.message || 'Failed to sync repositories');
+      if (error.response?.status === 401) {
+        toast.error('Please login with GitHub to sync repositories');
+      } else {
+        toast.error(error.message || 'Failed to sync repositories');
+      }
     }
   });
 
@@ -38,26 +44,49 @@ export default function Dashboard() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Monitor your repositories and track tasks
+            {user ? 'Monitor your repositories and track tasks' : 'Analyze public GitHub repositories'}
           </p>
         </div>
-        <button
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          className="btn btn-primary flex items-center space-x-2"
-        >
-          <FiRefreshCw className={syncMutation.isPending ? 'animate-spin' : ''} />
-          <span>Sync Repositories</span>
-        </button>
+        {user ? (
+          <button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            className="btn btn-primary flex items-center space-x-2"
+          >
+            <FiRefreshCw className={syncMutation.isPending ? 'animate-spin' : ''} />
+            <span>Sync Repositories</span>
+          </button>
+        ) : (
+          <button
+            onClick={loginWithGithub}
+            className="btn btn-primary flex items-center space-x-2"
+          >
+            <FiGithub className="w-5 h-5" />
+            <span>Login with GitHub</span>
+          </button>
+        )}
       </div>
 
       {!repositories || repositories.length === 0 ? (
         <div className="card text-center py-12">
           <FiGitBranch className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-          <h3 className="text-xl font-semibold mb-2">No Repositories Yet</h3>
+          <h3 className="text-xl font-semibold mb-2">
+            {user ? 'No Repositories Yet' : 'Welcome to RepoResume'}
+          </h3>
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Click "Sync Repositories" to import your GitHub repositories
+            {user 
+              ? 'Click "Sync Repositories" to import your GitHub repositories'
+              : 'Login with GitHub to sync your repositories, or analyze public repos by URL'}
           </p>
+          {!user && (
+            <button
+              onClick={loginWithGithub}
+              className="btn btn-primary inline-flex items-center space-x-2"
+            >
+              <FiGithub className="w-5 h-5" />
+              <span>Login with GitHub</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">

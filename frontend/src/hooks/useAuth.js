@@ -8,12 +8,11 @@ export function useAuth() {
   const { data: user, isLoading, error } = useQuery({
     queryKey: ['user'],
     queryFn: authAPI.getCurrentUser,
-    retry: 1,
-    retryDelay: 2000,
+    retry: false, // Don't retry - 401 is OK (not logged in)
     staleTime: Infinity,
     refetchOnWindowFocus: false,
-    // Don't retry forever - timeout after 5 seconds
-    gcTime: 5000,
+    // Treat 401 as "not logged in" not an error
+    throwOnError: false,
   });
 
   const logout = async () => {

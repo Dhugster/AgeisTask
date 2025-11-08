@@ -5,9 +5,8 @@ use tauri::{
     CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem,
     WindowEvent,
 };
-use std::process::{Command, Child, Stdio};
+use std::process::{Command, Child};
 use std::sync::Mutex;
-use std::path::PathBuf;
 
 struct AppState {
     backend_process: Mutex<Option<Child>>,

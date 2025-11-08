@@ -12,7 +12,7 @@ import BackendError from './components/BackendError';
 function App() {
   const { user, isLoading, error } = useAuth();
 
-  // Check if error is a connection error
+  // Check if error is a connection error (not auth error)
   const isConnectionError = error && (
     error.code === 'ECONNREFUSED' ||
     error.code === 'ERR_NETWORK' ||
@@ -21,12 +21,16 @@ function App() {
     (error.response === undefined && error.request !== undefined)
   );
 
+  // 401 (Unauthorized) is OK - user is just not logged in
+  const isAuthError = error?.response?.status === 401;
+  
   if (isConnectionError) {
     return <BackendError onRetry={() => window.location.reload()} />;
   }
 
-  if (isLoading) {
-    // Show loading for max 10 seconds, then show error
+  // Don't show loading spinner for auth check - it's quick
+  // Only show spinner for actual connection issues
+  if (isLoading && !isAuthError) {
     return <LoadingSpinner fullScreen />;
   }
 
@@ -35,14 +39,16 @@ function App() {
       <Route path="/" element={user ? <Navigate to="/dashboard" /> : <LandingPage />} />
       
       <Route element={<Layout />}>
+        {/* Dashboard and repos work without login (for public repos) */}
         <Route 
           path="/dashboard" 
-          element={user ? <Dashboard /> : <Navigate to="/" />} 
+          element={<Dashboard />} 
         />
         <Route 
           path="/repository/:id" 
-          element={user ? <RepositoryDetail /> : <Navigate to="/" />} 
+          element={<RepositoryDetail />} 
         />
+        {/* Tasks and settings require login */}
         <Route 
           path="/tasks" 
           element={user ? <TasksPage /> : <Navigate to="/" />} 
